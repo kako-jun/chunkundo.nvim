@@ -25,6 +25,7 @@ jobs:
 
       - name: Run tests
         run: |
+          nvim --headless -u demo/init.lua +"luafile tests/simple_test.lua"
           nvim --headless -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
 
   stylua:
