@@ -5,32 +5,30 @@
 
 連続した編集を1つのundoにまとめる Neovim プラグイン。
 
-> u u u u u u u u u u u "Hey Chunk, calm down!" - グーニーズ
+> *うっかりuを押してしまう* "Hey Chunk, calm down!" - グーニーズ
 
 ![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
 
 ## 問題
 
-Neovim のデフォルトでは、インサートモードで**1キー入力ごと**にundoエントリが作られる。「hello」と入力すると5個のundoエントリができる。undoが面倒：
+Neovimのデフォルトでは、**インサートセッション全体が1つのundo単位**になる。10行入力してEscを押した後にundoすると、全部が一瞬で消える：
 
 ```
-入力: h-e-l-l-o w-o-r-l-d
-undo: d → l → r → o → w → (空白) → o → l → l → e → h
-      ↑ "hello world" を消すのに11回！
+入力: (何行ものコード...)
+Esc
+u → 全部消えた！積み上げた成果が一瞬で台無しに。
 ```
+
+映画「グーニーズ」のチャンクがうっかり全てを台無しにするように、不用意な`u`一発であなたの作業が吹き飛ぶ。
 
 ## 解決策
 
-chunkundo.nvim は編集を**時間**と**単語境界**でまとめる。タイプし続ければ全編集が1つのundoになる。少し止まるかスペースを押すと、次の編集は新しいundoブロックになる：
+chunkundo.nvim は**インサートセッションを時間と単語境界で分割**する。長い編集中でも、段階的にundoできる：
 
 ```
-入力: hello (300ms休止) world
-undo: world → hello
-      ↑ たった2回！
-
-入力: hello world（スペースで区切り）
-undo: world → hello
-      ↑ たった2回！
+入力: function hello()   (300ms休止)   print("world")   (休止)   end
+undo: end → print("world") → function hello()
+      ↑ 一気にではなく、段階的にundo！
 ```
 
 **Neovimに同様のプラグインは存在しない。** [chillout.nvim](https://github.com/kako-jun/chillout.nvim) の debounce/throttle/batch 関数で実現したユニークなソリューション。
@@ -86,7 +84,7 @@ require("chunkundo").setup({
   auto_adjust = true,       -- タイピングパターンからintervalを学習 (デフォルト: true)
 
   -- 文字ベースのチャンキング
-  break_on_space = true,    -- スペース・改行で区切る (デフォルト: true)
+  break_on_space = true,    -- スペース・タブ・改行で区切る (デフォルト: true)
   break_on_punct = false,   -- 句読点(.,?!;:)で区切る (デフォルト: false)
 })
 ```
@@ -193,11 +191,11 @@ chunkundo.nvim は**指数移動平均 (EMA)** を使ってタイピングパタ
 |------|------|
 | **debounce** | タイピング休止検出、maxWaitで強制区切り |
 | **throttle** | ステータスライン更新を100msに制限（パフォーマンス向上） |
-| **batch** | 5秒ごとにタイムスタンプ収集してパターン学習 |
+| **batch** | 3回の休止を収集してタイピングパターンを学習 |
 
 ## なぜ "Chunk"?
 
-映画「グーニーズ」のチャンクから命名。いつも「落ち着け」と言われているキャラクター。チャンクが落ち着く必要があるように、undoの履歴もまとめて落ち着かせる必要がある。
+映画「グーニーズ」のチャンクから命名。うっかり全てを台無しにしてしまう愛すべきキャラクター。石像を壊してしまうチャンクのように、不用意な`u`一発であなたの作業が吹き飛ぶ。このプラグインは編集をチャンク分けして、破滅的ではなく段階的にundoできるようにする。
 
 ## コントリビュート
 

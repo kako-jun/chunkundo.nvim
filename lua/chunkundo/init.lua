@@ -18,23 +18,24 @@ local config = {
   auto_adjust = true, -- automatically adjust interval based on typing pattern
 
   -- Character-based chunking
-  break_on_space = true, -- break chunk on space and enter
+  break_on_space = true, -- break chunk on space, tab, and enter
   break_on_punct = false, -- break chunk on punctuation (.,?!;:)
 }
 
 local state = {
   debounced_break = nil, -- chillout debounce function
   throttled_statusline = nil, -- chillout throttle function for statusline
-  batched_timestamps = nil, -- chillout batch for collecting edit timestamps
+  batched_pauses = nil, -- chillout batch for collecting pause durations
   chunk_size = 0, -- current chunk edit count
   last_chunk_size = 0, -- last confirmed chunk size
   cached_statusline = "u", -- cached statusline value
-  edit_timestamps = {}, -- timestamps of recent edits for pattern analysis
+  last_edit_time = nil, -- timestamp of last TextChangedI for measuring pause
   learned_interval = nil, -- learned optimal interval from user's typing pattern
+  last_break_char = nil, -- last character that triggered a break (for consecutive detection)
 }
 
 -- Debug flag (set to true to enable debug output)
-local DEBUG = false
+local DEBUG = true
 
 local function debug_print(msg)
   if DEBUG then
@@ -44,37 +45,33 @@ local function debug_print(msg)
   end
 end
 
--- Analyze collected timestamps to find natural pause patterns
--- Note: timestamps comes from chillout.batch as {{ts1}, {ts2}, ...}
-local function analyze_pause_pattern(timestamps)
-  if #timestamps < 3 then
+-- Analyze collected pause durations to find optimal interval
+-- Note: pauses comes from chillout.batch as {{duration1}, {duration2}, ...}
+local function analyze_pause_pattern(pauses)
+  if #pauses < 3 then
     return nil
   end
 
-  -- Calculate intervals between consecutive edits
-  local pauses = {}
-  for i = 2, #timestamps do
-    -- Each item is wrapped in a table by batch: {timestamp}
-    local ts_curr = timestamps[i][1]
-    local ts_prev = timestamps[i - 1][1]
-    local pause = ts_curr - ts_prev
-    -- Only consider pauses that look like "thinking pauses" (> 100ms)
-    -- Ignore very short intervals (fast typing) and very long ones (distractions)
-    if pause > 100 and pause < 5000 then
-      table.insert(pauses, pause)
+  -- Extract pause durations from batch format
+  local durations = {}
+  for _, item in ipairs(pauses) do
+    local duration = item[1]
+    -- Filter reasonable pauses (not too short, not distractions)
+    if duration >= 100 and duration < 5000 then
+      table.insert(durations, duration)
     end
   end
 
-  if #pauses < 2 then
+  if #durations < 3 then
     return nil
   end
 
   -- Sort and find median (more robust than average)
-  table.sort(pauses)
-  local median_idx = math.floor(#pauses / 2)
-  local median_pause = pauses[median_idx]
+  table.sort(durations)
+  local median_idx = math.floor(#durations / 2)
+  local median_pause = durations[median_idx]
 
-  -- Use 80% of median as the interval (break slightly before typical pause ends)
+  -- Use 80% of median as the interval (break just before typical pause ends)
   local suggested = math.floor(median_pause * 0.8)
 
   -- Clamp to reasonable range
@@ -83,7 +80,7 @@ end
 
 -- Check if character should trigger a chunk break
 local function should_break_on_char(char)
-  if config.break_on_space and (char == " " or char == "\r" or char == "\n") then
+  if config.break_on_space and (char == " " or char == "\t" or char == "\r" or char == "\n") then
     return true
   end
   if config.break_on_punct and char:match("[.,?!;:]") then
@@ -101,14 +98,24 @@ local function on_insert_char_pre()
 
   local char = vim.v.char
   if should_break_on_char(char) then
+    -- Don't break if same break char was pressed consecutively (e.g., multiple spaces)
+    if state.last_break_char == char then
+      debug_print("skip break (consecutive): " .. (char == " " and "space" or char == "\r" and "enter" or char))
+      return
+    end
+
     -- Insert undo break point before this character
     local ctrl_g_u = vim.api.nvim_replace_termcodes("<C-g>u", true, false, true)
     vim.api.nvim_feedkeys(ctrl_g_u, "n", false)
+    state.last_break_char = char
     if state.chunk_size > 0 then
       state.last_chunk_size = state.chunk_size
       state.chunk_size = 0
     end
     debug_print("break on char: " .. (char == " " and "space" or char == "\r" and "enter" or char))
+  else
+    -- Non-break character clears the last break char
+    state.last_break_char = nil
   end
 end
 
@@ -136,13 +143,21 @@ local function on_text_changed()
     return
   end
 
+  local now = vim.uv.hrtime() / 1e6 -- Convert to milliseconds
+
+  -- Record pause duration for learning (time since last edit)
+  if state.last_edit_time and config.auto_adjust and state.batched_pauses then
+    local pause = now - state.last_edit_time
+    -- Only collect meaningful pauses (debounce interval or longer)
+    if pause >= M.get_effective_interval() then
+      state.batched_pauses(pause)
+      debug_print("collected pause: " .. math.floor(pause) .. "ms")
+    end
+  end
+  state.last_edit_time = now
+
   state.chunk_size = state.chunk_size + 1
   debug_print("TextChangedI: chunk_size=" .. state.chunk_size)
-
-  -- Collect timestamp for pattern learning
-  if state.batched_timestamps and config.auto_adjust then
-    state.batched_timestamps(vim.uv.hrtime() / 1e6) -- Convert to milliseconds
-  end
 
   -- Reset the debounce timer - will fire after interval of no typing
   if state.debounced_break then
@@ -156,6 +171,7 @@ local function on_insert_leave()
     state.last_chunk_size = state.chunk_size
   end
   state.chunk_size = 0
+  state.last_break_char = nil -- Reset for next insert session
   debug_print("InsertLeave: chunk confirmed")
 end
 
@@ -184,14 +200,14 @@ function M.setup(opts)
     end
   end, 100)
 
-  -- Create batched timestamp collector for learning typing patterns
-  -- Collects timestamps every 5 seconds and analyzes pause patterns
-  state.batched_timestamps = chillout.batch(function(timestamps)
+  -- Create batched pause collector for learning typing patterns
+  -- Fires after 3 pauses are collected (maxSize), not by time
+  state.batched_pauses = chillout.batch(function(pauses)
     if not config.auto_adjust then
       return
     end
 
-    local suggested = analyze_pause_pattern(timestamps)
+    local suggested = analyze_pause_pattern(pauses)
     if suggested then
       local alpha = 0.3 -- weight for new value (exponential moving average)
       local new_interval
@@ -213,7 +229,7 @@ function M.setup(opts)
         debug_print("Learned interval: " .. new_interval .. "ms (suggested: " .. suggested .. "ms)")
       end
     end
-  end, 5000)
+  end, nil, { maxSize = 3 }) -- 3 pauses trigger learning (no time-based flush)
 
   -- Set up autocommands
   if augroup then
@@ -259,7 +275,7 @@ end
 
 function M.status()
   local status = config.enabled and "enabled" or "disabled"
-  vim.notify(string.format("chunkundo: %s (interval: %dms)", status, config.interval), vim.log.levels.INFO)
+  vim.notify("chunkundo: " .. status, vim.log.levels.INFO)
 end
 
 -- Statusline component

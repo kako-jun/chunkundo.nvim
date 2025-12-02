@@ -4,9 +4,9 @@
 
 ## コンセプト
 
-「Hey Chunk, calm down!」- 映画『グーニーズ』のチャンクにちなんで命名。チャンクが落ち着く必要があるように、あなたのundo履歴も管理しやすい塊にチャンク化する必要がある。
+*うっかりuを押してしまう*「Hey Chunk, calm down!」- 映画『グーニーズ』のチャンクにちなんで命名。石像を壊してしまうチャンクのように、不用意な`u`一発で積み上げた作業が吹き飛ぶ。このプラグインは編集をチャンク分けして、破滅的ではなく段階的にundoできるようにする。
 
-**重要**: このプラグインはタイピング方法を変更しません。連続した編集を論理的なグループに結合することで、undoの動作を変更します。
+**重要**: このプラグインはタイピング方法を変更しません。インサートセッションを時間と単語境界で分割することで、undoの動作を変更します。
 
 ## コア機能
 
@@ -26,7 +26,7 @@ require("chunkundo").setup({
   auto_adjust = true,       -- タイピングパターンからintervalを自動学習（デフォルト: true）
 
   -- 文字ベースのチャンキング
-  break_on_space = true,    -- スペース・改行でチャンクを区切る（デフォルト: true）
+  break_on_space = true,    -- スペース・タブ・改行でチャンクを区切る（デフォルト: true）
   break_on_punct = false,   -- 句読点(.,?!;:)でチャンクを区切る（デフォルト: false）
 })
 ```
@@ -82,19 +82,21 @@ chunkundo.toggle_statusline()      -- 表示/非表示切り替え
 
 ### デフォルトのNeovim Undo動作
 
+Neovimはインサートセッション全体を1つのundo単位として扱う:
+
 ```
-入力: h-e-l-l-o
-Undo: o → l → l → e → h（5回のundo操作！）
+入力: (何行ものコード...)
+Esc
+u → 全部消えた！積み上げた成果が一瞬で台無しに。
 ```
 
 ### chunkundo.nvim使用時
 
-```
-入力: hello（300ms一時停止）world
-Undo: world → hello（2回のundo操作）
+インサートセッションを時間と単語境界で分割:
 
-入力: hello world（スペースで区切り）
-Undo: world → hello（2回のundo操作）
+```
+入力: function hello()（300ms休止）print("world")（休止）end
+Undo: end → print("world") → function hello()（段階的にundo）
 ```
 
 ### 内部メカニズム
@@ -119,12 +121,13 @@ T=600 'w'を押す → 新しいチャンク開始
 
 ユーザーのタイピングパターンから最適なintervalを学習:
 
-1. **タイムスタンプ収集**: chillout.batchで5秒ごとに編集タイムスタンプを収集
-2. **休止パターン分析**: 100ms〜5000msの休止を「考える休止」として抽出
-3. **中央値計算**: 外れ値に強い中央値を使用
-4. **interval決定**: 中央値の80%をintervalに（休止が終わる少し前に区切る）
-5. **指数移動平均(EMA)**: alpha=0.3で新旧値をブレンド、急激な変化を防止
-6. **範囲制限**: 100ms〜2000msにクランプ
+1. **休止収集**: 休止を検出したら、その時間をchillout.batchに渡す
+2. **3回でトリガー**: maxSize=3で、3回の休止が溜まったら即座に分析
+3. **休止パターン分析**: 100ms〜5000msの休止を「考える休止」として抽出
+4. **中央値計算**: 外れ値に強い中央値を使用
+5. **interval決定**: 中央値の80%をintervalに（休止が終わる少し前に区切る）
+6. **指数移動平均(EMA)**: alpha=0.3で新旧値をブレンド、急激な変化を防止
+7. **範囲制限**: 100ms〜2000msにクランプ
 
 ```lua
 -- 指数移動平均
@@ -139,7 +142,7 @@ chillout.nvimの3つの機能をすべて活用:
 |------|------|------|
 | debounce | チャンク区切り検出 | interval経過で`<C-g>u`挿入。maxWaitで強制区切り |
 | throttle | ステータスライン更新 | 100msに1回に制限してパフォーマンス向上 |
-| batch | 自動学習 | 5秒ごとにタイムスタンプ収集・パターン分析 |
+| batch | 自動学習 | 3回の休止を収集してパターン分析（maxSizeで回数トリガー） |
 
 ### debounce + maxWait
 
@@ -166,14 +169,14 @@ end, 100)
 ### batch
 
 ```lua
-state.batched_timestamps = chillout.batch(function(timestamps)
-  local suggested = analyze_pause_pattern(timestamps)
+state.batched_pauses = chillout.batch(function(pauses)
+  local suggested = analyze_pause_pattern(pauses)
   -- EMAで学習値を更新
-end, 5000)
+end, nil, { maxSize = 3 })  -- 時間ではなく回数でトリガー
 ```
 
-- 5秒間のタイムスタンプを収集
-- バッチ処理でパターン分析
+- 休止時間を収集（休止検出時にbatchに渡す）
+- 3回溜まったら即座にパターン分析
 - 学習したintervalでdebounceを再作成
 
 ## プロジェクト構造

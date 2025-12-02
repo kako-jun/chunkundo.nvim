@@ -7,32 +7,30 @@
 
 Batch consecutive edits into single undo units for Neovim.
 
-> u u u u u u u u u u u "Hey Chunk, calm down!" - The Goonies
+> *accidentally presses u* "Hey Chunk, calm down!" - The Goonies
 
 ![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
 
 ## The Problem
 
-By default, Neovim creates a new undo entry for **every single keystroke** in insert mode. Type "hello" and you get 5 undo entries. This makes undo tedious:
+By default, Neovim treats **an entire insert session as one undo unit**. Type 10 lines, press Esc, then undo - everything disappears at once:
 
 ```
-Type: h-e-l-l-o w-o-r-l-d
-Undo: d → l → r → o → w → (space) → o → l → l → e → h
-      ↑ 11 times to undo "hello world"!
+Type: (many lines of code...)
+Esc
+u → ALL GONE! Your work... destroyed in one keystroke.
 ```
+
+Just like Chunk from The Goonies who accidentally ruins everything, one careless `u` can wipe out your progress.
 
 ## The Solution
 
-chunkundo.nvim batches your edits by **time** and **word boundaries**. Keep typing and all edits become one undo unit. Pause for a moment or press space, and the next edits start a new undo block:
+chunkundo.nvim **breaks your insert session into smaller chunks** by time and word boundaries. Even in a long editing session, you can undo incrementally:
 
 ```
-Type: hello (pause 300ms) world
-Undo: world → hello
-      ↑ Just 2 undos!
-
-Type: hello world (space breaks chunk)
-Undo: world → hello
-      ↑ Just 2 undos!
+Type: function hello()   (pause 300ms)   print("world")   (pause)   end
+Undo: end → print("world") → function hello()
+      ↑ Undo step by step, not all at once!
 ```
 
 **No similar plugin exists for Neovim.** This is a unique solution powered by [chillout.nvim](https://github.com/kako-jun/chillout.nvim)'s debounce, throttle, and batch functions.
@@ -88,7 +86,7 @@ require("chunkundo").setup({
   auto_adjust = true,       -- learn interval from typing pattern (default: true)
 
   -- Character-based chunking
-  break_on_space = true,    -- break on space and enter (default: true)
+  break_on_space = true,    -- break on space, tab, and enter (default: true)
   break_on_punct = false,   -- break on punctuation .,?!;: (default: false)
 })
 ```
@@ -195,11 +193,11 @@ This plugin is a showcase for [chillout.nvim](https://github.com/kako-jun/chillo
 |---------|-------|
 | **debounce** | Detect typing pause, with maxWait for forced breaks |
 | **throttle** | Limit statusline updates to 100ms for performance |
-| **batch** | Collect timestamps every 5s for pattern learning |
+| **batch** | Collect 3 pauses to learn your typing pattern |
 
 ## Why "Chunk"?
 
-Named after Chunk from The Goonies - the lovable character who's always told to calm down. Just like Chunk needs to chill, your undo history needs to be chunked into manageable pieces.
+Named after Chunk from The Goonies - the lovable character who accidentally ruins everything. Just like Chunk breaking the statue, one careless `u` can wipe out all your hard work. This plugin chunks your edits so you can undo incrementally, not catastrophically.
 
 ## Contributing
 
