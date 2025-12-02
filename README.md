@@ -9,6 +9,8 @@ Batch consecutive edits into single undo units for Neovim.
 
 > "Hey Chunk, calm down!" - The Goonies
 
+![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
+
 ## The Problem
 
 By default, Neovim creates a new undo entry for **every single keystroke** in insert mode. Type "hello" and you get 5 undo entries. This makes undo tedious:
@@ -24,10 +26,12 @@ Undo: d → l → r → o → w → (space) → o → l → l → e → h
 chunkundo.nvim batches your edits by **time**. Keep typing and all edits become one undo unit. Pause for a moment, and the next edits start a new undo block:
 
 ```
-Type: hello (pause 500ms) world
+Type: hello (pause 300ms) world
 Undo: world → hello
       ↑ Just 2 undos!
 ```
+
+**No similar plugin exists for Neovim.** This is a unique solution powered by [chillout.nvim](https://github.com/kako-jun/chillout.nvim)'s debounce function.
 
 ## Requirements
 
@@ -90,14 +94,6 @@ chunkundo.disable()     -- Disable chunking
 chunkundo.toggle()      -- Toggle on/off
 chunkundo.is_enabled()  -- Returns boolean
 ```
-
-## How It Works
-
-1. On each keystroke in insert mode, the plugin uses `undojoin` to merge the edit with the previous one
-2. When you pause typing (default: 300ms), the undo sequence breaks
-3. The next edit starts a fresh undo block
-
-This is powered by [chillout.nvim](https://github.com/kako-jun/chillout.nvim)'s debounce function.
 
 ## Why "Chunk"?
 

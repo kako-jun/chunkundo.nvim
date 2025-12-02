@@ -7,6 +7,8 @@
 
 > "Hey Chunk, calm down!" - グーニーズ
 
+![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
+
 ## 問題
 
 Neovim のデフォルトでは、インサートモードで**1キー入力ごと**にundoエントリが作られる。「hello」と入力すると5個のundoエントリができる。undoが面倒：
@@ -22,10 +24,12 @@ undo: d → l → r → o → w → (空白) → o → l → l → e → h
 chunkundo.nvim は編集を**時間**でまとめる。タイプし続ければ全編集が1つのundoになる。少し止まると、次の編集は新しいundoブロックになる：
 
 ```
-入力: hello (500ms休止) world
+入力: hello (300ms休止) world
 undo: world → hello
       ↑ たった2回！
 ```
+
+**Neovimに同様のプラグインは存在しない。** [chillout.nvim](https://github.com/kako-jun/chillout.nvim) の debounce 関数で実現したユニークなソリューション。
 
 ## 必要環境
 
@@ -88,14 +92,6 @@ chunkundo.disable()     -- 無効化
 chunkundo.toggle()      -- 切り替え
 chunkundo.is_enabled()  -- boolean を返す
 ```
-
-## 仕組み
-
-1. インサートモードでのキー入力ごとに `undojoin` で前の編集と結合
-2. タイピングが止まると（デフォルト: 300ms）undoシーケンスが切れる
-3. 次の編集は新しいundoブロックを開始
-
-[chillout.nvim](https://github.com/kako-jun/chillout.nvim) の debounce 関数で実現。
 
 ## なぜ "Chunk"?
 
