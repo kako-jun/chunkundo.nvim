@@ -32,10 +32,11 @@ local state = {
   last_edit_time = nil, -- timestamp of last TextChangedI for measuring pause
   learned_interval = nil, -- learned optimal interval from user's typing pattern
   last_break_char = nil, -- last character that triggered a break (for consecutive detection)
+  show_statusline = true, -- whether to show statusline component
 }
 
 -- Debug flag (set to true to enable debug output)
-local DEBUG = true
+local DEBUG = false
 
 local function debug_print(msg)
   if DEBUG then
@@ -43,6 +44,16 @@ local function debug_print(msg)
       print("[chunkundo] " .. msg)
     end)
   end
+end
+
+-- Forward declaration for debounce callback
+local on_debounce_timeout
+
+-- Helper to create debounced break function
+local function create_debounced_break(interval)
+  return chillout.debounce(on_debounce_timeout, interval, {
+    maxWait = config.max_chunk_time,
+  })
 end
 
 -- Analyze collected pause durations to find optimal interval
@@ -121,7 +132,7 @@ end
 
 -- Called when debounce timer fires (via chillout.debounce)
 -- Insert an undo break point using CTRL-G u
-local function on_debounce_timeout()
+on_debounce_timeout = function()
   -- Only break if we're still in insert mode and have edits
   if vim.fn.mode() ~= "i" then
     return
@@ -182,9 +193,7 @@ function M.setup(opts)
 
   -- Create debounced break function using chillout
   -- maxWait ensures chunks are broken even during continuous typing
-  state.debounced_break = chillout.debounce(on_debounce_timeout, config.interval, {
-    maxWait = config.max_chunk_time,
-  })
+  state.debounced_break = create_debounced_break(config.interval)
 
   -- Create throttled statusline update function
   -- Limits statusline recalculation to once per 100ms for performance
@@ -222,10 +231,7 @@ function M.setup(opts)
       -- Only update if changed significantly (> 10ms difference)
       if not state.learned_interval or math.abs(new_interval - state.learned_interval) > 10 then
         state.learned_interval = new_interval
-        -- Update debounce with learned interval
-        state.debounced_break = chillout.debounce(on_debounce_timeout, new_interval, {
-          maxWait = config.max_chunk_time,
-        })
+        state.debounced_break = create_debounced_break(new_interval)
         debug_print("Learned interval: " .. new_interval .. "ms (suggested: " .. suggested .. "ms)")
       end
     end
@@ -296,10 +302,7 @@ end
 function M.set_interval(ms)
   config.interval = math.max(50, ms) -- minimum 50ms
   state.learned_interval = nil -- Clear learned interval when manually set
-  -- Recreate debounced function with new interval
-  state.debounced_break = chillout.debounce(on_debounce_timeout, config.interval, {
-    maxWait = config.max_chunk_time,
-  })
+  state.debounced_break = create_debounced_break(config.interval)
 end
 
 -- Get the current effective interval (learned or configured)
@@ -315,10 +318,7 @@ end
 function M.disable_auto_adjust()
   config.auto_adjust = false
   state.learned_interval = nil
-  -- Reset to configured interval
-  state.debounced_break = chillout.debounce(on_debounce_timeout, config.interval, {
-    maxWait = config.max_chunk_time,
-  })
+  state.debounced_break = create_debounced_break(config.interval)
 end
 
 function M.is_auto_adjust_enabled()
@@ -326,23 +326,17 @@ function M.is_auto_adjust_enabled()
 end
 
 -- Statusline visibility
-local show_statusline = true
-
 function M.show_statusline()
-  show_statusline = true
+  state.show_statusline = true
 end
 
 function M.hide_statusline()
-  show_statusline = false
-end
-
-function M.toggle_statusline()
-  show_statusline = not show_statusline
+  state.show_statusline = false
 end
 
 -- Wrap statusline to respect visibility
 local function statusline_wrapper()
-  if not show_statusline then
+  if not state.show_statusline then
     return ""
   end
   return M.statusline()
