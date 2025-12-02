@@ -165,6 +165,12 @@ require("lualine").setup({
 })
 ```
 
+### 素の Neovim での例
+
+```lua
+vim.opt.statusline = "%f %m %= %{%luaeval(\"require('chunkundo').statusline()\")%} "
+```
+
 ## 自動調整機能
 
 chunkundo.nvim は**指数移動平均 (EMA)** を使ってタイピングパターンを学習:
@@ -196,6 +202,16 @@ chunkundo.nvim は**指数移動平均 (EMA)** を使ってタイピングパタ
 ## なぜ "Chunk"?
 
 映画「グーニーズ」のチャンクから命名。うっかり全てを台無しにしてしまう愛すべきキャラクター。石像を壊してしまうチャンクのように、不用意な`u`一発であなたの作業が吹き飛ぶ。このプラグインは編集をチャンク分けして、破滅的ではなく段階的にundoできるようにする。
+
+## デモを試す
+
+```bash
+git clone https://github.com/kako-jun/chunkundo.nvim
+cd chunkundo.nvim
+nvim -u demo/init.lua
+```
+
+lazy.nvimやpackerでchillout.nvimをインストール済みなら自動検出します。未インストールなら同じ親ディレクトリにクローンしてください。
 
 ## コントリビュート
 

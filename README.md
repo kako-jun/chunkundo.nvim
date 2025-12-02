@@ -167,6 +167,12 @@ require("lualine").setup({
 })
 ```
 
+### Native statusline example
+
+```lua
+vim.opt.statusline = "%f %m %= %{%luaeval(\"require('chunkundo').statusline()\")%} "
+```
+
 ## Auto-adjust Feature
 
 chunkundo.nvim learns your typing pattern using **exponential moving average (EMA)**:
@@ -198,6 +204,16 @@ This plugin is a showcase for [chillout.nvim](https://github.com/kako-jun/chillo
 ## Why "Chunk"?
 
 Named after Chunk from The Goonies - the lovable character who accidentally ruins everything. Just like Chunk breaking the statue, one careless `u` can wipe out all your hard work. This plugin chunks your edits so you can undo incrementally, not catastrophically.
+
+## Try the Demo
+
+```bash
+git clone https://github.com/kako-jun/chunkundo.nvim
+cd chunkundo.nvim
+nvim -u demo/init.lua
+```
+
+The demo will find chillout.nvim automatically if installed via lazy.nvim or packer. Otherwise, clone it to the same parent directory.
 
 ## Contributing
 
