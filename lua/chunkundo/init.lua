@@ -18,8 +18,8 @@ local config = {
   auto_adjust = true, -- automatically adjust interval based on typing pattern
 
   -- Character-based chunking
-  break_on_space = true, -- break chunk on space, tab, and enter
-  break_on_punct = false, -- break chunk on punctuation (.,?!;:)
+  break_on_space = true, -- break chunk on space, tab, enter, full-width space
+  break_on_punct = true, -- break chunk on punctuation (.,?!;:。、，？！)
 }
 
 local state = {
@@ -91,10 +91,12 @@ end
 
 -- Check if character should trigger a chunk break
 local function should_break_on_char(char)
-  if config.break_on_space and (char == " " or char == "\t" or char == "\r" or char == "\n") then
+  -- Include full-width space (U+3000) for Japanese writing
+  if config.break_on_space and (char == " " or char == "\t" or char == "\r" or char == "\n" or char == "　") then
     return true
   end
-  if config.break_on_punct and char:match("[.,?!;:]") then
+  -- Include full-width punctuation for CJK writing
+  if config.break_on_punct and (char:match("[.,?!;:]") or char:match("[。、，？！]")) then
     return true
   end
   return false

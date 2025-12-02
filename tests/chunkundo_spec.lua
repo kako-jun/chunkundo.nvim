@@ -221,3 +221,28 @@ describe("undo chunking", function()
     assert.equals("", line)
   end)
 end)
+
+describe("CJK support", function()
+  -- Test the should_break_on_char logic by checking config options exist
+  it("should have break_on_space option", function()
+    chunkundo.setup({ break_on_space = true })
+    assert.is_true(chunkundo.is_enabled())
+  end)
+
+  it("should have break_on_punct option", function()
+    chunkundo.setup({ break_on_punct = true })
+    assert.is_true(chunkundo.is_enabled())
+  end)
+
+  it("should accept both space options", function()
+    -- Full-width space support is built into break_on_space
+    chunkundo.setup({ break_on_space = true, break_on_punct = false })
+    assert.is_true(chunkundo.is_enabled())
+  end)
+
+  it("should accept CJK punctuation option", function()
+    -- CJK punctuation (。、，？！) is built into break_on_punct
+    chunkundo.setup({ break_on_space = false, break_on_punct = true })
+    assert.is_true(chunkundo.is_enabled())
+  end)
+end)

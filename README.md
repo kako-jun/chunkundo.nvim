@@ -86,8 +86,8 @@ require("chunkundo").setup({
   auto_adjust = true,       -- learn interval from typing pattern (default: true)
 
   -- Character-based chunking
-  break_on_space = true,    -- break on space, tab, and enter (default: true)
-  break_on_punct = false,   -- break on punctuation .,?!;: (default: false)
+  break_on_space = true,    -- break on space, tab, enter, full-width space (default: true)
+  break_on_punct = true,    -- break on punctuation .,?!;: and 。、，？！ (default: true)
 })
 ```
 

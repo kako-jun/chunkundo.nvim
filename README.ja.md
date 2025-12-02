@@ -84,8 +84,8 @@ require("chunkundo").setup({
   auto_adjust = true,       -- タイピングパターンからintervalを学習 (デフォルト: true)
 
   -- 文字ベースのチャンキング
-  break_on_space = true,    -- スペース・タブ・改行で区切る (デフォルト: true)
-  break_on_punct = false,   -- 句読点(.,?!;:)で区切る (デフォルト: false)
+  break_on_space = true,    -- スペース・タブ・改行・全角スペースで区切る (デフォルト: true)
+  break_on_punct = true,    -- 句読点(.,?!;:。、，？！)で区切る (デフォルト: true)
 })
 ```
 
