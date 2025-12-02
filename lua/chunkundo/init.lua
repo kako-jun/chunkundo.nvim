@@ -107,4 +107,33 @@ function M.is_enabled()
   return config.enabled
 end
 
+function M.status()
+  local status = config.enabled and "enabled" or "disabled"
+  vim.notify(string.format("chunkundo: %s (interval: %dms)", status, config.interval), vim.log.levels.INFO)
+end
+
+-- Create user command
+vim.api.nvim_create_user_command("ChunkUndo", function(opts)
+  local subcmd = opts.args
+  if subcmd == "enable" then
+    M.enable()
+    vim.notify("chunkundo: enabled", vim.log.levels.INFO)
+  elseif subcmd == "disable" then
+    M.disable()
+    vim.notify("chunkundo: disabled", vim.log.levels.INFO)
+  elseif subcmd == "toggle" then
+    M.toggle()
+    vim.notify("chunkundo: " .. (config.enabled and "enabled" or "disabled"), vim.log.levels.INFO)
+  elseif subcmd == "status" then
+    M.status()
+  else
+    vim.notify("ChunkUndo: unknown subcommand. Use: enable, disable, toggle, status", vim.log.levels.ERROR)
+  end
+end, {
+  nargs = 1,
+  complete = function()
+    return { "enable", "disable", "toggle", "status" }
+  end,
+})
+
 return M
