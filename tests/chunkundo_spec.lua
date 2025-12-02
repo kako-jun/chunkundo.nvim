@@ -111,4 +111,113 @@ describe("interval API", function()
     chunkundo.set_interval(10)
     assert.equals(50, chunkundo.get_interval())
   end)
+
+  it("should get effective interval", function()
+    chunkundo.setup({ interval = 300 })
+    assert.equals(300, chunkundo.get_effective_interval())
+  end)
+end)
+
+describe("auto-adjust API", function()
+  it("should be enabled by default", function()
+    chunkundo.setup({})
+    assert.is_true(chunkundo.is_auto_adjust_enabled())
+  end)
+
+  it("should allow disabling via setup", function()
+    chunkundo.setup({ auto_adjust = false })
+    assert.is_false(chunkundo.is_auto_adjust_enabled())
+  end)
+
+  it("should toggle auto-adjust", function()
+    chunkundo.setup({ auto_adjust = true })
+    assert.is_true(chunkundo.is_auto_adjust_enabled())
+
+    chunkundo.disable_auto_adjust()
+    assert.is_false(chunkundo.is_auto_adjust_enabled())
+
+    chunkundo.enable_auto_adjust()
+    assert.is_true(chunkundo.is_auto_adjust_enabled())
+  end)
+end)
+
+describe("undo chunking", function()
+  before_each(function()
+    chunkundo.setup({ interval = 50 })
+    -- Create a fresh buffer for each test
+    vim.cmd("enew!")
+    vim.bo.buftype = ""
+  end)
+
+  after_each(function()
+    vim.cmd("bwipeout!")
+  end)
+
+  it("should join continuous edits into one undo block", function()
+    -- Simulate typing "hello" using feedkeys with proper flags
+    -- "t" = remap, "x" = execute immediately
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("ihello<Esc>", true, false, true), "tx", false)
+
+    -- Buffer should have "hello"
+    local line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("hello", line)
+
+    -- One undo should remove all of "hello"
+    vim.cmd("undo")
+    line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("", line)
+  end)
+
+  it("should create separate undo blocks after pause", function()
+    -- Type "hello"
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("ihello<Esc>", true, false, true), "tx", false)
+
+    -- Buffer should have "hello"
+    local line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("hello", line)
+
+    -- Wait for debounce to break the chunk (interval is 50ms, wait 100ms)
+    vim.wait(100, function()
+      return false
+    end)
+
+    -- Type "world" (append)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("aworld<Esc>", true, false, true), "tx", false)
+
+    -- Buffer should have "helloworld"
+    line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("helloworld", line)
+
+    -- First undo should only remove "world"
+    vim.cmd("undo")
+    line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("hello", line)
+
+    -- Second undo should remove "hello"
+    vim.cmd("undo")
+    line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("", line)
+  end)
+
+  it("should NOT join edits across insert sessions (mode change)", function()
+    -- Type "hello", exit insert mode
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("ihello<Esc>", true, false, true), "tx", false)
+
+    -- No wait - immediately re-enter insert mode
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("aworld<Esc>", true, false, true), "tx", false)
+
+    -- Buffer should have "helloworld"
+    local line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("helloworld", line)
+
+    -- First undo should only remove "world" (separate insert sessions)
+    vim.cmd("undo")
+    line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("hello", line)
+
+    -- Second undo should remove "hello"
+    vim.cmd("undo")
+    line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+    assert.equals("", line)
+  end)
 end)

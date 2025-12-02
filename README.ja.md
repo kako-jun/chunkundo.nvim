@@ -5,7 +5,7 @@
 
 連続した編集を1つのundoにまとめる Neovim プラグイン。
 
-> "Hey Chunk, calm down!" - グーニーズ
+> u u u u u u u u u u u "Hey Chunk, calm down!" - グーニーズ
 
 ![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
 
@@ -21,15 +21,27 @@ undo: d → l → r → o → w → (空白) → o → l → l → e → h
 
 ## 解決策
 
-chunkundo.nvim は編集を**時間**でまとめる。タイプし続ければ全編集が1つのundoになる。少し止まると、次の編集は新しいundoブロックになる：
+chunkundo.nvim は編集を**時間**と**単語境界**でまとめる。タイプし続ければ全編集が1つのundoになる。少し止まるかスペースを押すと、次の編集は新しいundoブロックになる：
 
 ```
 入力: hello (300ms休止) world
 undo: world → hello
       ↑ たった2回！
+
+入力: hello world（スペースで区切り）
+undo: world → hello
+      ↑ たった2回！
 ```
 
-**Neovimに同様のプラグインは存在しない。** [chillout.nvim](https://github.com/kako-jun/chillout.nvim) の debounce 関数で実現したユニークなソリューション。
+**Neovimに同様のプラグインは存在しない。** [chillout.nvim](https://github.com/kako-jun/chillout.nvim) の debounce/throttle/batch 関数で実現したユニークなソリューション。
+
+## 特徴
+
+- **時間ベースのチャンキング**: タイピング休止後に自動でundo区切り
+- **単語ベースのチャンキング**: スペース/改行で区切り（単語境界のように）
+- **自動調整**: タイピングパターンを学習してintervalを自動調整
+- **ステータスライン連携**: チャンキング状態をステータスラインで確認
+- **chillout.nvim完全統合**: 3機能すべてを活用（debounce, throttle, batch）
 
 ## 必要環境
 
@@ -66,8 +78,16 @@ use {
 
 ```lua
 require("chunkundo").setup({
-  interval = 300,  -- 新しいundoブロックまでの休止時間 (デフォルト: 300ms)
-  enabled = true,  -- 起動時に有効 (デフォルト: true)
+  enabled = true,           -- 起動時に有効 (デフォルト: true)
+
+  -- 時間ベースのチャンキング
+  interval = 300,           -- 新しいundoブロックまでの休止時間ms (デフォルト: 300)
+  max_chunk_time = 10000,   -- 連続入力中でも強制区切りする時間ms (デフォルト: 10000)
+  auto_adjust = true,       -- タイピングパターンからintervalを学習 (デフォルト: true)
+
+  -- 文字ベースのチャンキング
+  break_on_space = true,    -- スペース・改行で区切る (デフォルト: true)
+  break_on_punct = false,   -- 句読点(.,?!;:)で区切る (デフォルト: false)
 })
 ```
 
@@ -83,15 +103,26 @@ require("chunkundo").setup({
 | `:ChunkUndo status` | 現在の状態を表示 | - |
 | `:ChunkUndo show` | ステータスライン表示 | セッションのみ |
 | `:ChunkUndo hide` | ステータスライン非表示 | セッションのみ |
-| `:ChunkUndo interval` | 現在のintervalを表示 | - |
+| `:ChunkUndo interval` | 現在のintervalを表示（学習値含む） | - |
 | `:ChunkUndo interval 500` | intervalを500msに設定 | セッションのみ |
+| `:ChunkUndo auto` | 自動調整の状態を表示 | - |
+| `:ChunkUndo auto on` | 自動調整を有効化 | セッションのみ |
+| `:ChunkUndo auto off` | 自動調整を無効化 | セッションのみ |
+| `:ChunkUndo space` | スペース区切りの状態を表示 | - |
+| `:ChunkUndo space on` | スペース/改行での区切りを有効化 | セッションのみ |
+| `:ChunkUndo space off` | スペース/改行での区切りを無効化 | セッションのみ |
+| `:ChunkUndo punct` | 句読点区切りの状態を表示 | - |
+| `:ChunkUndo punct on` | 句読点での区切りを有効化 | セッションのみ |
+| `:ChunkUndo punct off` | 句読点での区切りを無効化 | セッションのみ |
 
 **永続的**に変更するにはsetupで指定:
 
 ```lua
 require("chunkundo").setup({
-  interval = 500,   -- 永続: デフォルトintervalを変更
-  enabled = false,  -- 永続: 無効状態で起動
+  interval = 500,           -- 永続: デフォルトintervalを変更
+  enabled = false,          -- 永続: 無効状態で起動
+  auto_adjust = false,      -- 永続: 自動学習を無効化
+  break_on_space = false,   -- 永続: 単語ベースのチャンキングを無効化
 })
 ```
 
@@ -103,8 +134,12 @@ require("chunkundo").setup({
 | `disable()` | 無効化 | セッションのみ |
 | `toggle()` | 切り替え | セッションのみ |
 | `is_enabled()` | boolean を返す | - |
-| `get_interval()` | 現在のintervalを取得 (ms) | - |
-| `set_interval(ms)` | intervalを変更 | セッションのみ |
+| `get_interval()` | 設定されたintervalを取得 (ms) | - |
+| `set_interval(ms)` | intervalを変更（学習値はリセット） | セッションのみ |
+| `get_effective_interval()` | 実際に使用中のinterval（学習値または設定値） | - |
+| `enable_auto_adjust()` | 自動学習を有効化 | セッションのみ |
+| `disable_auto_adjust()` | 自動学習を無効化 | セッションのみ |
+| `is_auto_adjust_enabled()` | boolean を返す | - |
 | `statusline()` | ステータス文字列を返す | - |
 | `statusline_component` | lualine用（show/hideを反映） | - |
 | `show_statusline()` | ステータスライン表示 | セッションのみ |
@@ -132,19 +167,33 @@ require("lualine").setup({
 })
 ```
 
-### interval をその場で調整
+## 自動調整機能
 
-```lua
--- キーマップでintervalを調整（セッションのみ）
-vim.keymap.set("n", "<leader>u+", function()
-  local chunkundo = require("chunkundo")
-  chunkundo.set_interval(chunkundo.get_interval() + 100)
-end)
-vim.keymap.set("n", "<leader>u-", function()
-  local chunkundo = require("chunkundo")
-  chunkundo.set_interval(chunkundo.get_interval() - 100)
-end)
+chunkundo.nvim は**指数移動平均 (EMA)** を使ってタイピングパターンを学習:
+
+1. 5秒ごとに編集タイムスタンプを収集（chillout.batch使用）
+2. 休止パターンを分析（100ms〜5000msの休止 = 「考える休止」）
+3. 中央値を計算（外れ値に強い）
+4. 中央値の80%をintervalに（休止が終わる少し前に区切る）
+5. 前の値とブレンド（EMA alpha=0.3）で急激な変化を防止
+
+使い込むほど、あなたのタイピングスタイルに合っていく！
+
+学習したintervalを確認:
+```vim
+:ChunkUndo interval
+" 出力: chunkundo: interval 245ms (learned), base 300ms
 ```
+
+## chillout.nvim 連携
+
+このプラグインは [chillout.nvim](https://github.com/kako-jun/chillout.nvim) のショーケースとして、3機能すべてを活用:
+
+| 機能 | 用途 |
+|------|------|
+| **debounce** | タイピング休止検出、maxWaitで強制区切り |
+| **throttle** | ステータスライン更新を100msに制限（パフォーマンス向上） |
+| **batch** | 5秒ごとにタイムスタンプ収集してパターン学習 |
 
 ## なぜ "Chunk"?
 

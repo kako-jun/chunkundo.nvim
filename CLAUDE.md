@@ -1,6 +1,6 @@
 # chunkundo.nvim 開発者ドキュメント
 
-時間ベースのチャンキングを使用して、連続した編集を単一のundoユニットにまとめるNeovimプラグイン。
+連続した編集を単一のundoユニットにまとめるNeovimプラグイン。
 
 ## コンセプト
 
@@ -18,8 +18,16 @@
 
 ```lua
 require("chunkundo").setup({
-  interval = 300,   -- 新しいundoブロックを開始するまでの一時停止時間（ミリ秒）（デフォルト: 300）
-  enabled = true,   -- 起動時に有効化（デフォルト: true）
+  enabled = true,           -- 起動時に有効化（デフォルト: true）
+
+  -- 時間ベースのチャンキング
+  interval = 300,           -- 新しいundoブロックを開始するまでの一時停止時間ms（デフォルト: 300）
+  max_chunk_time = 10000,   -- 連続入力中でも強制的にチャンクを区切る時間ms（デフォルト: 10000）
+  auto_adjust = true,       -- タイピングパターンからintervalを自動学習（デフォルト: true）
+
+  -- 文字ベースのチャンキング
+  break_on_space = true,    -- スペース・改行でチャンクを区切る（デフォルト: true）
+  break_on_punct = false,   -- 句読点(.,?!;:)でチャンクを区切る（デフォルト: false）
 })
 ```
 
@@ -28,12 +36,47 @@ require("chunkundo").setup({
 ```lua
 local chunkundo = require("chunkundo")
 
-chunkundo.setup(opts)   -- オプションで初期化
-chunkundo.enable()      -- チャンキングを有効化
-chunkundo.disable()     -- チャンキングを無効化（通常のundo動作）
-chunkundo.toggle()      -- オン/オフを切り替え
-chunkundo.is_enabled()  -- booleanを返す
+-- 基本操作
+chunkundo.setup(opts)       -- オプションで初期化
+chunkundo.enable()          -- チャンキングを有効化
+chunkundo.disable()         -- チャンキングを無効化
+chunkundo.toggle()          -- オン/オフを切り替え
+chunkundo.is_enabled()      -- booleanを返す
+chunkundo.status()          -- 現在の状態を通知
+
+-- Interval調整
+chunkundo.get_interval()           -- 設定されたintervalを取得
+chunkundo.set_interval(ms)         -- intervalを変更（学習値はリセット）
+chunkundo.get_effective_interval() -- 実際に使用中のinterval（学習値または設定値）
+
+-- 自動調整
+chunkundo.enable_auto_adjust()     -- 自動学習を有効化
+chunkundo.disable_auto_adjust()    -- 自動学習を無効化（設定値に戻る）
+chunkundo.is_auto_adjust_enabled() -- 自動学習が有効か
+
+-- ステータスライン
+chunkundo.statusline()             -- ステータス文字列を返す
+chunkundo.statusline_component     -- lualine用（show/hideを反映）
+chunkundo.show_statusline()        -- ステータスライン表示
+chunkundo.hide_statusline()        -- ステータスライン非表示
+chunkundo.toggle_statusline()      -- 表示/非表示切り替え
 ```
+
+## コマンド
+
+| コマンド | 説明 |
+|----------|------|
+| `:ChunkUndo enable` | 有効化 |
+| `:ChunkUndo disable` | 無効化 |
+| `:ChunkUndo toggle` | 切り替え |
+| `:ChunkUndo status` | 現在の状態を表示 |
+| `:ChunkUndo show` | ステータスライン表示 |
+| `:ChunkUndo hide` | ステータスライン非表示 |
+| `:ChunkUndo interval` | 現在のintervalを表示（学習値含む） |
+| `:ChunkUndo interval 500` | intervalを500msに設定 |
+| `:ChunkUndo auto` | 自動調整の状態を表示 |
+| `:ChunkUndo auto on` | 自動調整を有効化 |
+| `:ChunkUndo auto off` | 自動調整を無効化 |
 
 ## 動作の仕組み
 
@@ -49,26 +92,89 @@ Undo: o → l → l → e → h（5回のundo操作！）
 ```
 入力: hello（300ms一時停止）world
 Undo: world → hello（2回のundo操作）
+
+入力: hello world（スペースで区切り）
+Undo: world → hello（2回のundo操作）
 ```
 
 ### 内部メカニズム
 
-1. `TextChangedI`イベントで`undojoin`を呼び出し、前の編集とマージ
-2. `chillout.debounce`を使用してタイピングの一時停止を検出
-3. 一時停止を検出したら（デフォルト: 300ms）、結合を停止
-4. 次の編集で新しいundoブロックを開始
+1. `TextChangedI`イベントでdebounceタイマーをリセット
+2. 休止検出（interval経過）で`<C-g>u`を挿入してundoブレークポイントを作成
+3. `InsertCharPre`でスペース/句読点を検出して即座に区切り
+4. `InsertLeave`でチャンクを確定
 
 ```
-T=0   'h'を押す → undojoin（チャンク開始）
-T=50  'e'を押す → undojoin（チャンク継続）
-T=100 'l'を押す → undojoin（チャンク継続）
-T=150 'l'を押す → undojoin（チャンク継続）
-T=200 'o'を押す → undojoin（チャンク継続）
+T=0   'h'を押す → タイマー開始
+T=50  'e'を押す → タイマーリセット
+T=100 'l'を押す → タイマーリセット
+T=150 'l'を押す → タイマーリセット
+T=200 'o'を押す → タイマーリセット
 （ユーザーが一時停止）
-T=500 debounce発火 → チャンク終了
-T=600 'w'を押す → undojoin（新しいチャンク開始）
-...
+T=500 debounce発火 → <C-g>u挿入（undoブレークポイント）
+T=600 'w'を押す → 新しいチャンク開始
 ```
+
+### 自動学習アルゴリズム
+
+ユーザーのタイピングパターンから最適なintervalを学習:
+
+1. **タイムスタンプ収集**: chillout.batchで5秒ごとに編集タイムスタンプを収集
+2. **休止パターン分析**: 100ms〜5000msの休止を「考える休止」として抽出
+3. **中央値計算**: 外れ値に強い中央値を使用
+4. **interval決定**: 中央値の80%をintervalに（休止が終わる少し前に区切る）
+5. **指数移動平均(EMA)**: alpha=0.3で新旧値をブレンド、急激な変化を防止
+6. **範囲制限**: 100ms〜2000msにクランプ
+
+```lua
+-- 指数移動平均
+new_interval = learned_interval * 0.7 + suggested * 0.3
+```
+
+## chillout.nvim機能の活用
+
+chillout.nvimの3つの機能をすべて活用:
+
+| 機能 | 用途 | 詳細 |
+|------|------|------|
+| debounce | チャンク区切り検出 | interval経過で`<C-g>u`挿入。maxWaitで強制区切り |
+| throttle | ステータスライン更新 | 100msに1回に制限してパフォーマンス向上 |
+| batch | 自動学習 | 5秒ごとにタイムスタンプ収集・パターン分析 |
+
+### debounce + maxWait
+
+```lua
+state.debounced_break = chillout.debounce(on_debounce_timeout, config.interval, {
+  maxWait = config.max_chunk_time,  -- 10秒で強制区切り
+})
+```
+
+- **debounce**: 休止検出（interval経過で発火）
+- **maxWait**: 連続入力中でも強制的に区切り（巨大チャンク防止）
+
+### throttle
+
+```lua
+state.throttled_statusline = chillout.throttle(function()
+  -- ステータスライン文字列を更新
+end, 100)
+```
+
+- 高速タイピング時でも100msに1回だけ更新
+- 不要な再計算を防止
+
+### batch
+
+```lua
+state.batched_timestamps = chillout.batch(function(timestamps)
+  local suggested = analyze_pause_pattern(timestamps)
+  -- EMAで学習値を更新
+end, 5000)
+```
+
+- 5秒間のタイムスタンプを収集
+- バッチ処理でパターン分析
+- 学習したintervalでdebounceを再作成
 
 ## プロジェクト構造
 
@@ -88,225 +194,70 @@ chunkundo.nvim/
 
 ## 依存関係
 
-- [chillout.nvim](https://github.com/kako-jun/chillout.nvim) - debounce機能用
+- [chillout.nvim](https://github.com/kako-jun/chillout.nvim) - debounce/throttle/batch機能
 
 ## テスト実行
 
 ```bash
 # テスト実行（plenary.nvim必須）
-nvim --headless -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
+nvim --headless -u tests/minimal_init.lua \
+  -c "lua require('plenary.busted'); require('plenary.busted').run('tests/chunkundo_spec.lua')"
 
 # 手動デモ
 nvim -u demo/init.lua
 ```
 
-## 実装ノート
-
-- 編集をマージするために`vim.cmd("undojoin")`を使用
-- エッジケースを処理するためにundojoinをpcallでラップ
-- Autocommands: 編集検出用の`TextChangedI`、チャンク終了用の`InsertLeave`
-- chillout.nvimのdebounceによるタイマー管理
-
 ## 設計原則
 
 - 単一責任: undoチャンキングのみを処理
-- タイミングロジックはchillout.nvimに依存
-- 最小限の設定（intervalのみ）
+- chillout.nvimの全機能を活用（ショーケースとして機能）
+- 自動学習でユーザーに最適化
 - 非侵入的: オン/オフの切り替えが可能
 
-## 将来の機能追加案
+## 設計判断の記録
 
-### 課題: 固定intervalの限界
+### なぜ`undojoin`ではなく`<C-g>u`か
 
-固定の`interval = 300ms`は万能ではない:
-- コード作成時: 考えながら書くので短い停止が多い → 長めのintervalが良い
-- 文章作成時: 流れるように書く → 短めのintervalで細かくチャンク
-- 修正作業時: 細かい編集が断続的 → 長めのintervalが良い
-
-**暴発（意図しない単位でのundo）は悪印象に直結するため、ユーザーが簡単に調整できる仕組みが必要。**
-
-### 案1: リアルタイム調整API（優先度: 高）
+当初は`undojoin`で編集を結合するアプローチを試みた:
 
 ```lua
-chunkundo.set_interval(n)  -- intervalを動的に変更
-chunkundo.get_interval()   -- 現在のintervalを取得
-
--- キーマップ例
-vim.keymap.set("n", "<leader>u+", function()
-  local new = chunkundo.get_interval() + 100
-  chunkundo.set_interval(new)
-  vim.notify("chunkundo interval: " .. new .. "ms")
-end)
-vim.keymap.set("n", "<leader>u-", function()
-  local new = math.max(100, chunkundo.get_interval() - 100)
-  chunkundo.set_interval(new)
-  vim.notify("chunkundo interval: " .. new .. "ms")
-end)
+-- InsertCharPreでundojoinを呼ぶ
+pcall(vim.cmd, "undojoin")
 ```
 
-### 案2: プリセットモード（優先度: 中）
+**問題点**:
+- `vim.schedule_wrap`による遅延でrace conditionが発生
+- debounceコールバックと次のキー入力のタイミング競合
+- 一度結合すると取り消せない
+
+**解決策**: `<C-g>u`（Neovim標準のundoブレークポイント）を使用
 
 ```lua
-chunkundo.mode("code")   -- interval = 500（考えながら書く）
-chunkundo.mode("prose")  -- interval = 200（流れるように書く）
-chunkundo.mode("edit")   -- interval = 1000（細かい修正）
-
--- setup時にプリセットをカスタマイズ可能
-setup({
-  modes = {
-    code = 500,
-    prose = 200,
-    edit = 1000,
-  }
-})
+-- 休止検出時に<C-g>u挿入
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-g>u", true, false, true), "n", false)
 ```
 
-### 案3: ファイルタイプ別デフォルト（優先度: 中）
+- 「結合する」ではなく「区切る」アプローチ
+- Neovim標準機能なので安定
+- タイミング問題なし
 
-```lua
-setup({
-  interval = 300,
-  ft_intervals = {
-    markdown = 200,   -- 文章は細かく
-    lua = 400,        -- コードは粗く
-    python = 400,
-    text = 200,
-  }
-})
-```
+### なぜスペース/句読点で区切るか
 
-### 案4: 自動学習（優先度: 低 / 要検討）
+日本語と英語でundo単位が異なる問題:
+- 日本語: 変換確定単位（「こんにちは」→ 1undo）
+- 英語: 文字単位（「hello」→ 時間ベースで1undo）
 
-DQ4のAIのように、undo→redo パターンを検出して自動調整する案。
+英語でも単語ごとにundoできると便利:
+- 「hello world」→ スペースで区切り → 「world」「hello」の2undo
+- 時間ベースと併用可能
 
-```
-undo → redo → undo の検出
-↓
-「ユーザーは今のundo単位に不満」と解釈
-↓
-intervalを自動調整
-```
+### なぜ自動学習か
 
-**懸念点:**
-- undo→redoは「戻しすぎた」なのか「間違えてundo押した」なのか区別困難
-- 学習データが溜まるまで時間がかかる
-- ユーザーの意図推測は暴発の原因になりやすい
-- 「賢そうに見えて暴発する」リスク
+**課題**: 固定の`interval = 300ms`は万能ではない
+- 高速タイピストは休止が短い（150msとか）
+- ゆっくり打つ人は休止が長い（500msとか）
+- 同じ人でも集中度で変わる
 
-**結論:** まず案1〜3を実装してユーザーフィードバックを収集し、自動化の需要があれば検討。
-
-### 実装優先順位
-
-1. **案1（リアルタイム調整）**: 最小限の実装で即座に不満解消可能
-2. **案3（ファイルタイプ別）**: setup時の設定だけで多くのケースをカバー
-3. **案2（プリセット）**: ユーザーが意識的に切り替える必要があり、やや面倒
-4. **案4（自動学習）**: リスクが高いため慎重に検討
-
-## chillout.nvim機能の活用案
-
-chillout.nvimは3つの機能を提供している。これらを最大限活用する:
-
-| 機能 | 説明 | 現状 |
-|------|------|------|
-| debounce | 入力停止後N ms経過で実行 | チャンク区切り検出に使用中 |
-| throttle | N msに最大1回だけ実行 | 未使用 |
-| batch | 複数呼び出しをまとめて処理 | 未使用 |
-
-### 案5: throttleを使ったステータス表示（優先度: 高）
-
-interval調整時やチャンク状態をステータスラインに表示。throttleで更新頻度を制限:
-
-```lua
-local chillout = require("chillout")
-
--- 100msに1回だけステータス更新（高頻度の再描画を防止）
-local update_status = chillout.throttle(function(info)
-  -- lualineやステータスライン用のデータを更新
-  M.status = {
-    enabled = info.enabled,
-    interval = info.interval,
-    chunk_count = info.chunk_count,  -- 現在のセッションでのチャンク数
-  }
-end, 100)
-
--- API: ステータスライン連携
-function M.statusline()
-  if not M.status.enabled then return "[undo: off]" end
-  return string.format("[undo: %dms]", M.status.interval)
-end
-```
-
-### 案6: batchを使った編集パターン分析（優先度: 中）
-
-undo/redoイベントをバッチ収集して分析。自動学習の基盤:
-
-```lua
-local chillout = require("chillout")
-
--- 5秒間のundo/redoイベントをバッチ収集
-local analyze_undo_pattern = chillout.batch(function(events)
-  -- events = { {"undo", timestamp}, {"redo", timestamp}, {"undo", timestamp}, ... }
-
-  local undo_redo_pairs = 0
-  for i = 2, #events do
-    if events[i-1][1] == "undo" and events[i][1] == "redo" then
-      undo_redo_pairs = undo_redo_pairs + 1
-    end
-  end
-
-  -- undo→redoが多い = チャンクが大きすぎる可能性
-  if undo_redo_pairs >= 3 then
-    vim.notify("Hint: intervalを短くすると細かくundoできます", vim.log.levels.INFO)
-  end
-end, 5000)
-
--- undo/redo時にイベント収集
-vim.api.nvim_create_autocmd("User", {
-  pattern = { "UndoPost", "RedoPost" },  -- 要確認: 実際のイベント名
-  callback = function(ev)
-    analyze_undo_pattern(ev.match, vim.uv.now())
-  end,
-})
-```
-
-### 案7: debounce + throttleの組み合わせ（優先度: 中）
-
-タイピング速度に応じてintervalを動的調整:
-
-```lua
-local chillout = require("chillout")
-
--- タイピング速度計測（throttleで100msごとにサンプリング）
-local keystrokes = 0
-local sample_speed = chillout.throttle(function()
-  local speed = keystrokes * 10  -- keys per second (100ms * 10 = 1sec)
-  keystrokes = 0
-
-  -- 速いタイピング → 短いinterval（流れるように書いている）
-  -- 遅いタイピング → 長いinterval（考えながら書いている）
-  if speed > 50 then
-    M.set_interval(200)  -- 高速タイピング
-  elseif speed < 10 then
-    M.set_interval(500)  -- 低速タイピング
-  end
-end, 100)
-
--- InsertCharPreでキーストローク計測
-vim.api.nvim_create_autocmd("InsertCharPre", {
-  callback = function()
-    keystrokes = keystrokes + 1
-    sample_speed()
-  end,
-})
-```
-
-### chillout.nvim活用まとめ
-
-| 案 | 使用機能 | 目的 |
-|----|----------|------|
-| 現状 | debounce | チャンク区切り検出 |
-| 案5 | throttle | ステータス表示の更新制限 |
-| 案6 | batch | undo/redoパターン収集・分析 |
-| 案7 | debounce + throttle | タイピング速度による動的調整 |
-
-**設計思想:** chillout.nvimの全機能を活用することで、chunkundo.nvimはchillout.nvimの「ショーケース」としても機能する。
+**解決策**: ユーザーの実際の休止パターンから学習
+- 使い込むほど「ちょうどいい」区切りになる
+- 指数移動平均で急激な変化を防止
