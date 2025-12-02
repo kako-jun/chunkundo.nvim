@@ -93,6 +93,44 @@ chunkundo.enable()      -- Enable chunking
 chunkundo.disable()     -- Disable chunking
 chunkundo.toggle()      -- Toggle on/off
 chunkundo.is_enabled()  -- Returns boolean
+chunkundo.statusline()  -- Returns status string for statusline
+chunkundo.get_interval() -- Get current interval (ms)
+chunkundo.set_interval(ms) -- Set interval dynamically
+```
+
+## Statusline Integration
+
+Add `chunkundo.statusline()` to your statusline to see chunking activity:
+
+```
+u+5    -- Growing: 5 edits in current chunk
+u=12   -- Confirmed: last chunk had 12 edits
+u-     -- Disabled
+u      -- Enabled, no activity yet
+```
+
+### lualine example
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_x = { require("chunkundo").statusline },
+  }
+})
+```
+
+### Adjusting interval on the fly
+
+```lua
+-- Keymaps to adjust interval
+vim.keymap.set("n", "<leader>u+", function()
+  local chunkundo = require("chunkundo")
+  chunkundo.set_interval(chunkundo.get_interval() + 100)
+end)
+vim.keymap.set("n", "<leader>u-", function()
+  local chunkundo = require("chunkundo")
+  chunkundo.set_interval(chunkundo.get_interval() - 100)
+end)
 ```
 
 ## Why "Chunk"?

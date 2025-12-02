@@ -87,10 +87,48 @@ require("chunkundo").setup({
 ```lua
 local chunkundo = require("chunkundo")
 
-chunkundo.enable()      -- 有効化
-chunkundo.disable()     -- 無効化
-chunkundo.toggle()      -- 切り替え
-chunkundo.is_enabled()  -- boolean を返す
+chunkundo.enable()       -- 有効化
+chunkundo.disable()      -- 無効化
+chunkundo.toggle()       -- 切り替え
+chunkundo.is_enabled()   -- boolean を返す
+chunkundo.statusline()   -- ステータスライン用文字列を返す
+chunkundo.get_interval() -- 現在のintervalを取得 (ms)
+chunkundo.set_interval(ms) -- intervalを動的に変更
+```
+
+## ステータスライン連携
+
+`chunkundo.statusline()` をステータスラインに追加すると、チャンキングの状態が見える:
+
+```
+u+5    -- 成長中: 現在のチャンクに5編集
+u=12   -- 確定: 前回のチャンクは12編集
+u-     -- 無効
+u      -- 有効、まだ編集なし
+```
+
+### lualine での例
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_x = { require("chunkundo").statusline },
+  }
+})
+```
+
+### interval をその場で調整
+
+```lua
+-- キーマップでintervalを調整
+vim.keymap.set("n", "<leader>u+", function()
+  local chunkundo = require("chunkundo")
+  chunkundo.set_interval(chunkundo.get_interval() + 100)
+end)
+vim.keymap.set("n", "<leader>u-", function()
+  local chunkundo = require("chunkundo")
+  chunkundo.set_interval(chunkundo.get_interval() - 100)
+end)
 ```
 
 ## なぜ "Chunk"?

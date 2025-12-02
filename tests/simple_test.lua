@@ -107,6 +107,41 @@ test("ChunkUndo status command", function()
   assert_true(true)
 end)
 
+-- Statusline tests
+test("statusline function exists", function()
+  assert_true(type(chunkundo.statusline) == "function")
+end)
+
+test("statusline returns u- when disabled", function()
+  chunkundo.setup({ interval = 50 })
+  chunkundo.disable()
+  assert_eq(chunkundo.statusline(), "u-")
+end)
+
+test("statusline returns u when enabled with no activity", function()
+  chunkundo.setup({ interval = 50 })
+  chunkundo.enable()
+  assert_eq(chunkundo.statusline(), "u")
+end)
+
+-- Interval API tests
+test("get_interval returns current interval", function()
+  chunkundo.setup({ interval = 500 })
+  assert_eq(chunkundo.get_interval(), 500)
+end)
+
+test("set_interval changes interval", function()
+  chunkundo.setup({ interval = 300 })
+  chunkundo.set_interval(600)
+  assert_eq(chunkundo.get_interval(), 600)
+end)
+
+test("set_interval enforces minimum 50ms", function()
+  chunkundo.setup({ interval = 300 })
+  chunkundo.set_interval(10)
+  assert_eq(chunkundo.get_interval(), 50)
+end)
+
 -- Summary
 print(string.format("\n=== Results: %d passed, %d failed ===\n", passed, failed))
 

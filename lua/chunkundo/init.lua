@@ -17,11 +17,15 @@ local config = {
 local state = {
   in_chunk = false,
   debounced_break = nil,
+  chunk_size = 0, -- current chunk edit count
+  last_chunk_size = 0, -- last confirmed chunk size
 }
 
 -- Break the undo sequence
 local function break_undo_sequence()
   if state.in_chunk then
+    state.last_chunk_size = state.chunk_size
+    state.chunk_size = 0
     state.in_chunk = false
     -- Next edit will start a new undo block
   end
@@ -49,6 +53,8 @@ local function on_text_changed()
     -- Start a new chunk
     state.in_chunk = true
   end
+
+  state.chunk_size = state.chunk_size + 1
 
   -- Reset the timer - break sequence after interval of no edits
   if state.debounced_break then
@@ -110,6 +116,33 @@ end
 function M.status()
   local status = config.enabled and "enabled" or "disabled"
   vim.notify(string.format("chunkundo: %s (interval: %dms)", status, config.interval), vim.log.levels.INFO)
+end
+
+-- Statusline component
+-- Returns: "u+5" (growing), "u=12" (confirmed), "u-" (disabled)
+function M.statusline()
+  if not config.enabled then
+    return "u-"
+  end
+
+  if state.in_chunk and state.chunk_size > 0 then
+    return "u+" .. state.chunk_size
+  elseif state.last_chunk_size > 0 then
+    return "u=" .. state.last_chunk_size
+  else
+    return "u"
+  end
+end
+
+-- Interval adjustment API
+function M.get_interval()
+  return config.interval
+end
+
+function M.set_interval(ms)
+  config.interval = math.max(50, ms) -- minimum 50ms
+  -- Recreate debounced function with new interval
+  state.debounced_break = chillout.debounce(break_undo_sequence, config.interval)
 end
 
 -- Create user command
