@@ -1,12 +1,9 @@
 #!/bin/sh
 # Setup git hooks for development
 
-HOOK_FILE=".git/hooks/pre-commit"
+echo '#!/bin/sh
+stylua --check lua/ tests/ || exit 1' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
 
-cat > "$HOOK_FILE" << 'EOF'
-#!/bin/sh
-stylua --check lua/ tests/ || exit 1
-EOF
-
-chmod +x "$HOOK_FILE"
 echo "Pre-commit hook installed."
+echo "Requires: stylua (cargo install stylua)"

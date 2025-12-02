@@ -14,15 +14,21 @@ local function test(name, fn)
 end
 
 local function assert_true(val, msg)
-  if not val then error(msg or "expected true") end
+  if not val then
+    error(msg or "expected true")
+  end
 end
 
 local function assert_false(val, msg)
-  if val then error(msg or "expected false") end
+  if val then
+    error(msg or "expected false")
+  end
 end
 
 local function assert_eq(a, b, msg)
-  if a ~= b then error(msg or string.format("expected %s, got %s", tostring(b), tostring(a))) end
+  if a ~= b then
+    error(msg or string.format("expected %s, got %s", tostring(b), tostring(a)))
+  end
 end
 
 print("\n=== chunkundo.nvim tests ===\n")
