@@ -93,8 +93,8 @@ chunkundo.nvim/
 ## テスト実行
 
 ```bash
-# 自動テスト
-nvim --headless -u demo/init.lua +"luafile tests/simple_test.lua"
+# テスト実行（plenary.nvim必須）
+nvim --headless -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
 
 # 手動デモ
 nvim -u demo/init.lua
