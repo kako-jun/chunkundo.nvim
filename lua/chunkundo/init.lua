@@ -45,6 +45,7 @@ local function debug_print(msg)
 end
 
 -- Analyze collected timestamps to find natural pause patterns
+-- Note: timestamps comes from chillout.batch as {{ts1}, {ts2}, ...}
 local function analyze_pause_pattern(timestamps)
   if #timestamps < 3 then
     return nil
@@ -53,7 +54,10 @@ local function analyze_pause_pattern(timestamps)
   -- Calculate intervals between consecutive edits
   local pauses = {}
   for i = 2, #timestamps do
-    local pause = timestamps[i] - timestamps[i - 1]
+    -- Each item is wrapped in a table by batch: {timestamp}
+    local ts_curr = timestamps[i][1]
+    local ts_prev = timestamps[i - 1][1]
+    local pause = ts_curr - ts_prev
     -- Only consider pauses that look like "thinking pauses" (> 100ms)
     -- Ignore very short intervals (fast typing) and very long ones (distractions)
     if pause > 100 and pause < 5000 then
