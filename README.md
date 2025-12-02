@@ -77,36 +77,51 @@ That's it! Now your edits are automatically chunked.
 
 ## Commands
 
-```vim
-:ChunkUndo enable   " Enable chunking
-:ChunkUndo disable  " Disable (normal undo behavior)
-:ChunkUndo toggle   " Toggle on/off
-:ChunkUndo status   " Show current status
+| Command | Description | Persistence |
+|---------|-------------|-------------|
+| `:ChunkUndo enable` | Enable chunking | Session only |
+| `:ChunkUndo disable` | Disable chunking | Session only |
+| `:ChunkUndo toggle` | Toggle on/off | Session only |
+| `:ChunkUndo status` | Show current status | - |
+| `:ChunkUndo show` | Show statusline | Session only |
+| `:ChunkUndo hide` | Hide statusline | Session only |
+| `:ChunkUndo interval` | Show current interval | - |
+| `:ChunkUndo interval 500` | Set interval to 500ms | Session only |
+
+For **permanent** changes, modify your setup:
+
+```lua
+require("chunkundo").setup({
+  interval = 500,   -- permanent: change default interval
+  enabled = false,  -- permanent: start disabled
+})
 ```
 
 ## API
 
-```lua
-local chunkundo = require("chunkundo")
-
-chunkundo.enable()      -- Enable chunking
-chunkundo.disable()     -- Disable chunking
-chunkundo.toggle()      -- Toggle on/off
-chunkundo.is_enabled()  -- Returns boolean
-chunkundo.statusline()  -- Returns status string for statusline
-chunkundo.get_interval() -- Get current interval (ms)
-chunkundo.set_interval(ms) -- Set interval dynamically
-```
+| Function | Description | Persistence |
+|----------|-------------|-------------|
+| `enable()` | Enable chunking | Session only |
+| `disable()` | Disable chunking | Session only |
+| `toggle()` | Toggle on/off | Session only |
+| `is_enabled()` | Returns boolean | - |
+| `get_interval()` | Get current interval (ms) | - |
+| `set_interval(ms)` | Set interval | Session only |
+| `statusline()` | Returns status string | - |
+| `statusline_component` | For lualine (respects show/hide) | - |
+| `show_statusline()` | Show statusline | Session only |
+| `hide_statusline()` | Hide statusline | Session only |
 
 ## Statusline Integration
 
-Add `chunkundo.statusline()` to your statusline to see chunking activity:
+Add `statusline_component` to your statusline to see chunking activity:
 
 ```
 u+5    -- Growing: 5 edits in current chunk
 u=12   -- Confirmed: last chunk had 12 edits
 u-     -- Disabled
 u      -- Enabled, no activity yet
+(empty) -- Hidden via :ChunkUndo hide
 ```
 
 ### lualine example
@@ -114,7 +129,7 @@ u      -- Enabled, no activity yet
 ```lua
 require("lualine").setup({
   sections = {
-    lualine_x = { require("chunkundo").statusline },
+    lualine_x = { require("chunkundo").statusline_component },
   }
 })
 ```
@@ -122,7 +137,7 @@ require("lualine").setup({
 ### Adjusting interval on the fly
 
 ```lua
--- Keymaps to adjust interval
+-- Keymaps to adjust interval (session only)
 vim.keymap.set("n", "<leader>u+", function()
   local chunkundo = require("chunkundo")
   chunkundo.set_interval(chunkundo.get_interval() + 100)

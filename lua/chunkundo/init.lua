@@ -15,29 +15,19 @@ local config = {
 }
 
 local state = {
-  in_chunk = false,
+  can_join = false, -- true if next edit should be joined to previous
   debounced_break = nil,
   chunk_size = 0, -- current chunk edit count
   last_chunk_size = 0, -- last confirmed chunk size
 }
 
--- Break the undo sequence
+-- Break the undo sequence (called by debounce after pause)
 local function break_undo_sequence()
-  if state.in_chunk then
+  if state.chunk_size > 0 then
     state.last_chunk_size = state.chunk_size
-    state.chunk_size = 0
-    state.in_chunk = false
-    -- Next edit will start a new undo block
   end
-end
-
--- Join current edit to previous undo block
-local function join_undo()
-  if state.in_chunk and config.enabled then
-    -- undojoin must be called before the edit, but we're in TextChangedI
-    -- So we set up for the NEXT edit to be joined
-    vim.cmd("silent! undojoin")
-  end
+  state.chunk_size = 0
+  state.can_join = false -- Next edit starts a new undo block
 end
 
 -- Called on every text change in insert mode
@@ -46,15 +36,13 @@ local function on_text_changed()
     return
   end
 
-  if state.in_chunk then
-    -- Continue the chunk - join this edit
+  if state.can_join then
+    -- Continue the chunk - join this edit to previous
     pcall(vim.cmd, "silent! undojoin")
-  else
-    -- Start a new chunk
-    state.in_chunk = true
   end
 
   state.chunk_size = state.chunk_size + 1
+  state.can_join = true -- Next edit should be joined
 
   -- Reset the timer - break sequence after interval of no edits
   if state.debounced_break then
@@ -125,7 +113,7 @@ function M.statusline()
     return "u-"
   end
 
-  if state.in_chunk and state.chunk_size > 0 then
+  if state.chunk_size > 0 then
     return "u+" .. state.chunk_size
   elseif state.last_chunk_size > 0 then
     return "u=" .. state.last_chunk_size
@@ -145,9 +133,37 @@ function M.set_interval(ms)
   state.debounced_break = chillout.debounce(break_undo_sequence, config.interval)
 end
 
+-- Statusline visibility
+local show_statusline = true
+
+function M.show_statusline()
+  show_statusline = true
+end
+
+function M.hide_statusline()
+  show_statusline = false
+end
+
+function M.toggle_statusline()
+  show_statusline = not show_statusline
+end
+
+-- Wrap statusline to respect visibility
+local function statusline_wrapper()
+  if not show_statusline then
+    return ""
+  end
+  return M.statusline()
+end
+
+-- Export wrapper for lualine
+M.statusline_component = statusline_wrapper
+
 -- Create user command
 vim.api.nvim_create_user_command("ChunkUndo", function(opts)
-  local subcmd = opts.args
+  local args = vim.split(opts.args, "%s+")
+  local subcmd = args[1]
+
   if subcmd == "enable" then
     M.enable()
     vim.notify("chunkundo: enabled", vim.log.levels.INFO)
@@ -159,13 +175,34 @@ vim.api.nvim_create_user_command("ChunkUndo", function(opts)
     vim.notify("chunkundo: " .. (config.enabled and "enabled" or "disabled"), vim.log.levels.INFO)
   elseif subcmd == "status" then
     M.status()
+  elseif subcmd == "show" then
+    M.show_statusline()
+    vim.notify("chunkundo: statusline shown", vim.log.levels.INFO)
+  elseif subcmd == "hide" then
+    M.hide_statusline()
+    vim.notify("chunkundo: statusline hidden", vim.log.levels.INFO)
+  elseif subcmd == "interval" then
+    local ms = tonumber(args[2])
+    if ms then
+      M.set_interval(ms)
+      vim.notify("chunkundo: interval set to " .. M.get_interval() .. "ms", vim.log.levels.INFO)
+    else
+      vim.notify("chunkundo: current interval is " .. M.get_interval() .. "ms", vim.log.levels.INFO)
+    end
   else
-    vim.notify("ChunkUndo: unknown subcommand. Use: enable, disable, toggle, status", vim.log.levels.ERROR)
+    vim.notify(
+      "ChunkUndo: unknown subcommand. Use: enable, disable, toggle, status, show, hide, interval [ms]",
+      vim.log.levels.ERROR
+    )
   end
 end, {
-  nargs = 1,
-  complete = function()
-    return { "enable", "disable", "toggle", "status" }
+  nargs = "+",
+  complete = function(arg_lead, cmd_line)
+    local args = vim.split(cmd_line, "%s+")
+    if #args <= 2 then
+      return { "enable", "disable", "toggle", "status", "show", "hide", "interval" }
+    end
+    return {}
   end,
 })
 
