@@ -7,7 +7,7 @@
 
 > *うっかりuを押してしまう* "Hey Chunk, calm down!" - グーニーズ
 
-![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
+<!-- TODO: Add demo gif to assets/ -->
 
 ## 問題
 
@@ -45,6 +45,8 @@ undo: end → print("world") → function hello()
 
 - Neovim >= 0.10
 - [chillout.nvim](https://github.com/kako-jun/chillout.nvim)
+
+`:checkhealth chunkundo` でセットアップを確認できます。`:help chunkundo` で詳細ドキュメントを参照。
 
 ## インストール
 
@@ -92,6 +94,8 @@ require("chunkundo").setup({
 これだけ！編集が自動的にまとめられる。
 
 ## コマンド
+
+> **注意**: `:ChunkUndo` コマンドは `setup()` を呼んだ後に使用可能になります。
 
 | コマンド | 説明 | 永続性 |
 |----------|------|--------|

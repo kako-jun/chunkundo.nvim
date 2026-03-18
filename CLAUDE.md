@@ -185,7 +185,10 @@ end, nil, { maxSize = 3 })  -- 時間ではなく回数でトリガー
 chunkundo.nvim/
 ├── lua/
 │   └── chunkundo/
-│       └── init.lua    -- コア実装
+│       ├── init.lua    -- コア実装
+│       └── health.lua  -- :checkhealth chunkundo 用ヘルスチェック
+├── doc/
+│   └── chunkundo.txt   -- :help chunkundo 用vimdoc
 ├── demo/
 │   └── init.lua        -- インタラクティブデモ
 ├── tests/
@@ -253,6 +256,25 @@ vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-g>u", true, false, true
 英語でも単語ごとにundoできると便利:
 - 「hello world」→ スペースで区切り → 「world」「hello」の2undo
 - 時間ベースと併用可能
+
+### CJK文字判定
+
+Luaの`string.match`はバイトレベルで動作するため、UTF-8のマルチバイト文字（CJK句読点など）を`[。、]`のような文字クラスで正しくマッチできない。対策:
+- ASCII句読点: `char:match("[.,?!;:]")` で安全にマッチ
+- CJK句読点: テーブルルックアップ `cjk_punct_set[char]` で完全一致比較
+- 全角スペース: UTF-8バイト列 `\xe3\x80\x80` との直接比較
+
+### readonly/unmodifiableバッファ
+
+`vim.bo.readonly` または `not vim.bo.modifiable` のバッファではチャンキング処理をスキップする。`should_skip_buffer()` ヘルパーで `on_insert_char_pre` と `on_text_changed` の冒頭で判定。
+
+### :ChunkUndoコマンドの登録タイミング
+
+`:ChunkUndo` コマンドは `setup()` 内で登録される（モジュール読み込み時ではない）。これにより、chillout.nvimが見つからない場合や setup() が呼ばれていない状態でコマンドが使えてしまう問題を防止。
+
+### error() vs vim.notify()
+
+chillout.nvimが見つからない場合、`error()` ではなく `vim.notify()` + `vim.log.levels.WARN` を使用。`error()` はNeovimをクラッシュさせる可能性があるため、警告を出してモジュールテーブルを返すだけにする。
 
 ### なぜ自動学習か
 

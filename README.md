@@ -9,7 +9,7 @@ Batch consecutive edits into single undo units for Neovim.
 
 > *accidentally presses u* "Hey Chunk, calm down!" - The Goonies
 
-![demo](https://github.com/kako-jun/chunkundo.nvim/raw/main/assets/demo.gif)
+<!-- TODO: Add demo gif to assets/ -->
 
 ## The Problem
 
@@ -47,6 +47,8 @@ Undo: end → print("world") → function hello()
 
 - Neovim >= 0.10
 - [chillout.nvim](https://github.com/kako-jun/chillout.nvim)
+
+Run `:checkhealth chunkundo` to verify your setup. See `:help chunkundo` for full documentation.
 
 ## Installation
 
@@ -94,6 +96,8 @@ require("chunkundo").setup({
 That's it! Now your edits are automatically chunked.
 
 ## Commands
+
+> **Note**: The `:ChunkUndo` command is registered when `setup()` is called.
 
 | Command | Description | Persistence |
 |---------|-------------|-------------|

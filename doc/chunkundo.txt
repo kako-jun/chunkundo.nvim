@@ -1,0 +1,189 @@
+*chunkundo.txt*  Batch consecutive edits into single undo units
+
+Author:  kako-jun
+License: MIT
+URL:     https://github.com/kako-jun/chunkundo.nvim
+
+==============================================================================
+CONTENTS                                                   *chunkundo-contents*
+
+  1. Introduction ............................ |chunkundo-introduction|
+  2. Requirements ............................ |chunkundo-requirements|
+  3. Setup ................................... |chunkundo-setup|
+  4. Commands ................................ |chunkundo-commands|
+  5. API ..................................... |chunkundo-api|
+  6. Statusline .............................. |chunkundo-statusline|
+  7. Auto-adjust ............................. |chunkundo-auto-adjust|
+
+==============================================================================
+1. INTRODUCTION                                        *chunkundo-introduction*
+
+chunkundo.nvim breaks your insert session into smaller undo chunks by time
+and word boundaries. Instead of undoing an entire insert session at once,
+you can undo incrementally.
+
+Named after Chunk from The Goonies - one careless `u` can wipe out all
+your hard work. This plugin chunks your edits so you can undo step by step.
+
+==============================================================================
+2. REQUIREMENTS                                        *chunkundo-requirements*
+
+- Neovim >= 0.10
+- chillout.nvim (https://github.com/kako-jun/chillout.nvim)
+
+Run `:checkhealth chunkundo` to verify your setup.
+
+==============================================================================
+3. SETUP                                                    *chunkundo-setup*
+
+                                                          *chunkundo.setup()*
+Call `setup()` to initialize the plugin: >lua
+
+  require("chunkundo").setup({
+    enabled = true,           -- enable on startup (default: true)
+
+    -- Time-based chunking
+    interval = 300,           -- ms of pause before new undo block (default: 300)
+    max_chunk_time = 10000,   -- ms before forced chunk break (default: 10000)
+    auto_adjust = true,       -- learn interval from typing pattern (default: true)
+
+    -- Character-based chunking
+    break_on_space = true,    -- break on space, tab, enter (default: true)
+    break_on_punct = true,    -- break on punctuation (default: true)
+  })
+<
+
+==============================================================================
+4. COMMANDS                                              *chunkundo-commands*
+
+                                                                  *:ChunkUndo*
+:ChunkUndo {subcommand} [args]
+
+  Subcommands:
+
+  enable          Enable chunking (session only).
+  disable         Disable chunking (session only).
+  toggle          Toggle on/off (session only).
+  status          Show current status.
+  show            Show statusline component.
+  hide            Hide statusline component.
+  interval        Show current interval (including learned value).
+  interval {ms}   Set interval to {ms} milliseconds (session only).
+  auto            Show auto-adjust status.
+  auto on         Enable auto-adjust (session only).
+  auto off        Disable auto-adjust (session only).
+  space           Show break-on-space status.
+  space on        Enable break on space/enter (session only).
+  space off       Disable break on space/enter (session only).
+  punct           Show break-on-punctuation status.
+  punct on        Enable break on punctuation (session only).
+  punct off       Disable break on punctuation (session only).
+
+The `:ChunkUndo` command is only available after |chunkundo.setup()| has
+been called.
+
+==============================================================================
+5. API                                                      *chunkundo-api*
+
+All functions are available on the module returned by
+`require("chunkundo")`.
+
+                                                        *chunkundo.enable()*
+enable()                Enable chunking.
+
+                                                       *chunkundo.disable()*
+disable()               Disable chunking.
+
+                                                        *chunkundo.toggle()*
+toggle()                Toggle chunking on/off.
+
+                                                    *chunkundo.is_enabled()*
+is_enabled()            Returns `true` if chunking is enabled.
+
+                                                        *chunkundo.status()*
+status()                Notify current status via |vim.notify()|.
+
+                                                  *chunkundo.get_interval()*
+get_interval()          Get the configured interval in milliseconds.
+
+                                                  *chunkundo.set_interval()*
+set_interval({ms})      Set interval (minimum 50ms). Clears any learned
+                        interval.
+
+                                        *chunkundo.get_effective_interval()*
+get_effective_interval()
+                        Get the actual interval currently in use (learned
+                        value if available, otherwise configured value).
+
+                                            *chunkundo.enable_auto_adjust()*
+enable_auto_adjust()    Enable automatic interval learning.
+
+                                           *chunkundo.disable_auto_adjust()*
+disable_auto_adjust()   Disable auto-learning and revert to configured
+                        interval.
+
+                                        *chunkundo.is_auto_adjust_enabled()*
+is_auto_adjust_enabled()
+                        Returns `true` if auto-adjust is enabled.
+
+                                                    *chunkundo.statusline()*
+statusline()            Returns a short status string for use in statusline.
+                        See |chunkundo-statusline|.
+
+                                          *chunkundo.statusline_component*
+statusline_component    A function suitable for lualine that respects
+                        show/hide state.
+
+                                              *chunkundo.show_statusline()*
+show_statusline()       Show the statusline component.
+
+                                              *chunkundo.hide_statusline()*
+hide_statusline()       Hide the statusline component.
+
+==============================================================================
+6. STATUSLINE                                          *chunkundo-statusline*
+
+The statusline component shows chunking activity: >
+
+  u+5    -- Growing: 5 edits in current chunk
+  u=12   -- Confirmed: last chunk had 12 edits
+  u-     -- Disabled
+  u      -- Enabled, no activity yet
+  (empty) -- Hidden via :ChunkUndo hide
+<
+
+lualine example: >lua
+
+  require("lualine").setup({
+    sections = {
+      lualine_x = { require("chunkundo").statusline_component },
+    }
+  })
+<
+
+Native statusline example: >lua
+
+  vim.opt.statusline =
+    "%f %m %= %{%luaeval(\"require('chunkundo').statusline()\")%} "
+<
+
+==============================================================================
+7. AUTO-ADJUST                                        *chunkundo-auto-adjust*
+
+chunkundo.nvim can learn your typing pattern using exponential moving
+average (EMA):
+
+1. Collects pause durations between edits (via chillout.batch).
+2. Analyzes pauses in the 100ms-5000ms range ("thinking pauses").
+3. Computes the median pause (robust against outliers).
+4. Sets interval to 80% of median (break just before pause ends).
+5. Blends with previous value (EMA alpha=0.3) for stability.
+
+Check the learned interval: >vim
+
+  :ChunkUndo interval
+  " Output: chunkundo: interval 245ms (learned), base 300ms
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

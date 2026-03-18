@@ -4,9 +4,15 @@
 
 local M = {}
 
+local setup_done = false
+
 local chillout_ok, chillout = pcall(require, "chillout")
 if not chillout_ok then
-  error("chunkundo.nvim requires chillout.nvim: https://github.com/kako-jun/chillout.nvim")
+  vim.notify(
+    "chunkundo.nvim requires chillout.nvim: https://github.com/kako-jun/chillout.nvim",
+    vim.log.levels.WARN
+  )
+  return M
 end
 
 local config = {
@@ -89,23 +95,41 @@ local function analyze_pause_pattern(pauses)
   return math.max(100, math.min(2000, suggested))
 end
 
+-- CJK punctuation characters to break on (exact string comparison for multibyte safety)
+local cjk_punct_set = {
+  ["。"] = true,
+  ["、"] = true,
+  ["，"] = true,
+  ["？"] = true,
+  ["！"] = true,
+}
+
 -- Check if character should trigger a chunk break
 local function should_break_on_char(char)
   -- Include full-width space (U+3000) for Japanese writing
-  if config.break_on_space and (char == " " or char == "\t" or char == "\r" or char == "\n" or char == "　") then
+  if config.break_on_space and (char == " " or char == "\t" or char == "\r" or char == "\n" or char == "\xe3\x80\x80") then
     return true
   end
-  -- Include full-width punctuation for CJK writing
-  if config.break_on_punct and (char:match("[.,?!;:]") or char:match("[。、，？！]")) then
+  -- ASCII punctuation (safe with byte-level match)
+  if config.break_on_punct and char:match("[.,?!;:]") then
+    return true
+  end
+  -- CJK punctuation (use table lookup instead of byte-level match)
+  if config.break_on_punct and cjk_punct_set[char] then
     return true
   end
   return false
 end
 
+-- Check if current buffer should be skipped (readonly/unmodifiable)
+local function should_skip_buffer()
+  return vim.bo.readonly or not vim.bo.modifiable
+end
+
 -- Called BEFORE each character insert (InsertCharPre)
 -- Used for character-based chunk breaking
 local function on_insert_char_pre()
-  if not config.enabled then
+  if not config.enabled or should_skip_buffer() then
     return
   end
 
@@ -152,7 +176,7 @@ end
 
 -- Called AFTER text change in insert mode (TextChangedI)
 local function on_text_changed()
-  if not config.enabled then
+  if not config.enabled or should_skip_buffer() then
     return
   end
 
@@ -189,6 +213,114 @@ local function on_insert_leave()
 end
 
 local augroup = nil
+
+-- Register :ChunkUndo command (called from setup to avoid premature registration)
+local function register_command()
+  vim.api.nvim_create_user_command("ChunkUndo", function(opts)
+    local args = vim.split(opts.args, "%s+")
+    local subcmd = args[1]
+
+    if subcmd == "enable" then
+      M.enable()
+      vim.notify("chunkundo: enabled", vim.log.levels.INFO)
+    elseif subcmd == "disable" then
+      M.disable()
+      vim.notify("chunkundo: disabled", vim.log.levels.INFO)
+    elseif subcmd == "toggle" then
+      M.toggle()
+      vim.notify("chunkundo: " .. (config.enabled and "enabled" or "disabled"), vim.log.levels.INFO)
+    elseif subcmd == "status" then
+      M.status()
+    elseif subcmd == "show" then
+      M.show_statusline()
+      vim.notify("chunkundo: statusline shown", vim.log.levels.INFO)
+    elseif subcmd == "hide" then
+      M.hide_statusline()
+      vim.notify("chunkundo: statusline hidden", vim.log.levels.INFO)
+    elseif subcmd == "interval" then
+      local ms = tonumber(args[2])
+      if ms then
+        M.set_interval(ms)
+        vim.notify("chunkundo: interval set to " .. M.get_interval() .. "ms", vim.log.levels.INFO)
+      else
+        local effective = M.get_effective_interval()
+        local learned = state.learned_interval
+        if learned then
+          vim.notify(
+            string.format("chunkundo: interval %dms (learned), base %dms", effective, config.interval),
+            vim.log.levels.INFO
+          )
+        else
+          vim.notify("chunkundo: interval " .. effective .. "ms", vim.log.levels.INFO)
+        end
+      end
+    elseif subcmd == "auto" then
+      local action = args[2]
+      if action == "on" then
+        M.enable_auto_adjust()
+        vim.notify("chunkundo: auto-adjust enabled", vim.log.levels.INFO)
+      elseif action == "off" then
+        M.disable_auto_adjust()
+        vim.notify("chunkundo: auto-adjust disabled", vim.log.levels.INFO)
+      else
+        local cmd_status = config.auto_adjust and "on" or "off"
+        local learned = state.learned_interval
+        if learned then
+          vim.notify(
+            string.format("chunkundo: auto-adjust %s (learned: %dms)", cmd_status, learned),
+            vim.log.levels.INFO
+          )
+        else
+          vim.notify("chunkundo: auto-adjust " .. cmd_status, vim.log.levels.INFO)
+        end
+      end
+    elseif subcmd == "space" then
+      local action = args[2]
+      if action == "on" then
+        config.break_on_space = true
+        vim.notify("chunkundo: break on space/enter enabled", vim.log.levels.INFO)
+      elseif action == "off" then
+        config.break_on_space = false
+        vim.notify("chunkundo: break on space/enter disabled", vim.log.levels.INFO)
+      else
+        vim.notify(
+          "chunkundo: break on space/enter " .. (config.break_on_space and "on" or "off"),
+          vim.log.levels.INFO
+        )
+      end
+    elseif subcmd == "punct" then
+      local action = args[2]
+      if action == "on" then
+        config.break_on_punct = true
+        vim.notify("chunkundo: break on punctuation enabled", vim.log.levels.INFO)
+      elseif action == "off" then
+        config.break_on_punct = false
+        vim.notify("chunkundo: break on punctuation disabled", vim.log.levels.INFO)
+      else
+        vim.notify(
+          "chunkundo: break on punctuation " .. (config.break_on_punct and "on" or "off"),
+          vim.log.levels.INFO
+        )
+      end
+    else
+      vim.notify(
+        "ChunkUndo: unknown subcommand. Use: enable, disable, toggle, status, show, hide, interval, auto, space, punct",
+        vim.log.levels.ERROR
+      )
+    end
+  end, {
+    nargs = "+",
+    complete = function(arg_lead, cmd_line)
+      local args = vim.split(cmd_line, "%s+")
+      if #args <= 2 then
+        return { "enable", "disable", "toggle", "status", "show", "hide", "interval", "auto", "space", "punct" }
+      elseif #args == 3 and (args[2] == "auto" or args[2] == "space" or args[2] == "punct") then
+        return { "on", "off" }
+      end
+      return {}
+    end,
+  })
+end
 
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
@@ -259,6 +391,11 @@ function M.setup(opts)
     group = augroup,
     callback = on_insert_leave,
   })
+
+  -- Register :ChunkUndo command (only after setup is complete)
+  register_command()
+
+  setup_done = true
 end
 
 function M.enable()
@@ -279,6 +416,10 @@ end
 
 function M.is_enabled()
   return config.enabled
+end
+
+function M.is_setup_done()
+  return setup_done
 end
 
 function M.status()
@@ -346,102 +487,5 @@ end
 
 -- Export wrapper for lualine
 M.statusline_component = statusline_wrapper
-
--- Create user command
-vim.api.nvim_create_user_command("ChunkUndo", function(opts)
-  local args = vim.split(opts.args, "%s+")
-  local subcmd = args[1]
-
-  if subcmd == "enable" then
-    M.enable()
-    vim.notify("chunkundo: enabled", vim.log.levels.INFO)
-  elseif subcmd == "disable" then
-    M.disable()
-    vim.notify("chunkundo: disabled", vim.log.levels.INFO)
-  elseif subcmd == "toggle" then
-    M.toggle()
-    vim.notify("chunkundo: " .. (config.enabled and "enabled" or "disabled"), vim.log.levels.INFO)
-  elseif subcmd == "status" then
-    M.status()
-  elseif subcmd == "show" then
-    M.show_statusline()
-    vim.notify("chunkundo: statusline shown", vim.log.levels.INFO)
-  elseif subcmd == "hide" then
-    M.hide_statusline()
-    vim.notify("chunkundo: statusline hidden", vim.log.levels.INFO)
-  elseif subcmd == "interval" then
-    local ms = tonumber(args[2])
-    if ms then
-      M.set_interval(ms)
-      vim.notify("chunkundo: interval set to " .. M.get_interval() .. "ms", vim.log.levels.INFO)
-    else
-      local effective = M.get_effective_interval()
-      local learned = state.learned_interval
-      if learned then
-        vim.notify(
-          string.format("chunkundo: interval %dms (learned), base %dms", effective, config.interval),
-          vim.log.levels.INFO
-        )
-      else
-        vim.notify("chunkundo: interval " .. effective .. "ms", vim.log.levels.INFO)
-      end
-    end
-  elseif subcmd == "auto" then
-    local action = args[2]
-    if action == "on" then
-      M.enable_auto_adjust()
-      vim.notify("chunkundo: auto-adjust enabled", vim.log.levels.INFO)
-    elseif action == "off" then
-      M.disable_auto_adjust()
-      vim.notify("chunkundo: auto-adjust disabled", vim.log.levels.INFO)
-    else
-      local status = config.auto_adjust and "on" or "off"
-      local learned = state.learned_interval
-      if learned then
-        vim.notify(string.format("chunkundo: auto-adjust %s (learned: %dms)", status, learned), vim.log.levels.INFO)
-      else
-        vim.notify("chunkundo: auto-adjust " .. status, vim.log.levels.INFO)
-      end
-    end
-  elseif subcmd == "space" then
-    local action = args[2]
-    if action == "on" then
-      config.break_on_space = true
-      vim.notify("chunkundo: break on space/enter enabled", vim.log.levels.INFO)
-    elseif action == "off" then
-      config.break_on_space = false
-      vim.notify("chunkundo: break on space/enter disabled", vim.log.levels.INFO)
-    else
-      vim.notify("chunkundo: break on space/enter " .. (config.break_on_space and "on" or "off"), vim.log.levels.INFO)
-    end
-  elseif subcmd == "punct" then
-    local action = args[2]
-    if action == "on" then
-      config.break_on_punct = true
-      vim.notify("chunkundo: break on punctuation enabled", vim.log.levels.INFO)
-    elseif action == "off" then
-      config.break_on_punct = false
-      vim.notify("chunkundo: break on punctuation disabled", vim.log.levels.INFO)
-    else
-      vim.notify("chunkundo: break on punctuation " .. (config.break_on_punct and "on" or "off"), vim.log.levels.INFO)
-    end
-  else
-    vim.notify(
-      "ChunkUndo: unknown subcommand. Use: enable, disable, toggle, status, show, hide, interval, auto, space, punct",
-      vim.log.levels.ERROR
-    )
-  end
-end, {
-  nargs = "+",
-  complete = function(arg_lead, cmd_line)
-    local args = vim.split(cmd_line, "%s+")
-    if #args <= 2 then
-      return { "enable", "disable", "toggle", "status", "show", "hide", "interval", "auto", "space", "punct" }
-    elseif #args == 3 and (args[2] == "auto" or args[2] == "space" or args[2] == "punct") then
-      return { "on", "off" }
-    end
-    return {}
-  end,
-})
 
 return M
