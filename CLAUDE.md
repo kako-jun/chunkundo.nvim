@@ -77,6 +77,12 @@ chunkundo.toggle_statusline()      -- 表示/非表示切り替え
 | `:ChunkUndo auto` | 自動調整の状態を表示 |
 | `:ChunkUndo auto on` | 自動調整を有効化 |
 | `:ChunkUndo auto off` | 自動調整を無効化 |
+| `:ChunkUndo space` | スペース区切りの状態を表示 |
+| `:ChunkUndo space on` | スペース区切りを有効化 |
+| `:ChunkUndo space off` | スペース区切りを無効化 |
+| `:ChunkUndo punct` | 句読点区切りの状態を表示 |
+| `:ChunkUndo punct on` | 句読点区切りを有効化 |
+| `:ChunkUndo punct off` | 句読点区切りを無効化 |
 
 ## 動作の仕組み
 
